@@ -139,11 +139,10 @@ export async function executeFixatumTool(name, args) {
           "The W3C did:hedera method requires an Ed25519 public key encoded as base58btc multibase (the z prefix). Your Hedera account uses an ECDSA key for transactions — these are intentionally separate. Your DID key is a dedicated identity key, not your wallet key.",
         key_generation: {
           description:
-            "Run this one-liner in Node.js to generate a compatible Ed25519 key pair and print your z... public key:",
-          command:
-            "node -e \"import('@hashgraph/sdk').then(({PrivateKey})=>{const k=PrivateKey.generateED25519();console.log('Private key (STORE SECURELY):',k.toString());console.log('Public key (z... multibase):','z'+require('bs58').encode(k.publicKey.toBytes()));})\"",
-          alternative:
-            "Or use Fixatum's keygen tool: node keygen.mjs (available in the Fixatum repo). It prints both the private key (store offline) and the z... public key to paste here.",
+            "Call GET https://did.fixatum.com/keygen to get a fresh Ed25519 keypair. Store the private_key_hex securely. Use the public_key_multibase value as your ed25519_public_key in the next call.",
+          endpoint: "GET https://did.fixatum.com/keygen",
+          note:
+            "Fixatum generates but never stores your private key. It is returned once only. No Node.js or terminal required.",
         },
         private_key_warning:
           "⚠️ Store your Ed25519 private key securely — offline or in a secrets manager. Fixatum never sees your private key. Loss of the private key does not affect your DID or score, but you will not be able to sign DID assertions in the future.",
