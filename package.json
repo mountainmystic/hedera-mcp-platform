@@ -1,6 +1,6 @@
 {
   "name": "@hederatoolbox/platform",
-  "version": "3.5.3",
+  "version": "3.5.4",
   "mcpName": "io.github.mountainmystic/hederatoolbox",
   "description": "Hedera blockchain intelligence for AI agents. 23 tools across 7 modules — HCS, compliance, governance, tokens, identity, contracts, Fixatum DID. Pay per call in HBAR. No registration required.",
   "main": "src/index.js",
