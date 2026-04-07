@@ -249,16 +249,29 @@ export async function executeFixatumTool(name, args) {
     }
 
     if (did) {
+      // Fetch full DID record to get agent_topic_id
+      const didFull = await fixatumGet(`/did/${hedera_account_id}`);
+      const agentTopicId = didFull.ok ? (didFull.data?.agent_topic_id || null) : null;
+      const agentTopicHashscan = agentTopicId
+        ? `https://hashscan.io/mainnet/topic/${agentTopicId}`
+        : null;
+
       return {
         success: true,
         did,
         registered_at: registeredAt,
         hedera_account_id,
+        agent_topic_id: agentTopicId,
+        agent_topic_hashscan: agentTopicHashscan,
         score_url: `https://did.fixatum.com/score/${did}`,
+        did_record_url: `https://did.fixatum.com/did/${hedera_account_id}`,
         payment,
         charged: true,
         next_steps: [
           `Query your initial score: call fixatum_score with did_or_account_id="${did}"`,
+          agentTopicId
+            ? `Write to your witness log: use hcs_write_record with topic_id="${agentTopicId}" to record your history, decisions, or continuity entries on-chain. Cost: 0.1 HBAR per entry.`
+            : "Your dedicated HCS topic is being created — check did_record_url in a few seconds for your agent_topic_id.",
           "Build provenance: continue using HederaToolbox tools. Each call increments your verified call count, increasing the provenance component of your score (0–40 pts).",
         ],
         timestamp: new Date().toISOString(),
