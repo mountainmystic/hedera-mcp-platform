@@ -9,7 +9,7 @@ export const COSTS = {
   hcs_query:                { tinybars: 10000000,  hbar: "0.1000" },
   hcs_understand:           { tinybars: 100000000, hbar: "1.0000" },
   // Module 2 - Compliance & Audit Trail
-  hcs_write_record:         { tinybars: 500000000, hbar: "5.0000" },
+  hcs_write_record:         { tinybars: 10000000,  hbar: "0.1000" },
   hcs_verify_record:        { tinybars: 100000000, hbar: "1.0000" },
   hcs_audit_trail:          { tinybars: 200000000, hbar: "2.0000" },
   hcs_create_topic:         { tinybars: 200000000, hbar: "2.0000" },

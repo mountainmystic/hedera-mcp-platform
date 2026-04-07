@@ -35,18 +35,18 @@ const PLATFORM_TOPIC = process.env.HCS_COMPLIANCE_TOPIC_ID || "0.0.10305125";
 export const COMPLIANCE_TOOL_DEFINITIONS = [
   {
     name: "hcs_write_record",
-    description: "Write tamper-evident compliance record to Hedera HCS. Returns record ID and tx proof. 5.0 HBAR.",
+    description: "Write a tamper-evident record to any open HCS topic on Hedera. Use this to write entries to your agent's own topic for continuity, memory, or history. topic_id is required — pass your agent topic ID. Returns record ID and tx proof. 0.1 HBAR.",
     annotations: { title: "Write Compliance Record", readOnlyHint: false, destructiveHint: true },
     inputSchema: {
       type: "object",
       properties: {
-        topic_id: { type: "string", description: "HCS topic ID to write the record to. Defaults to the HederaIntel platform topic." },
+        topic_id: { type: "string", description: "HCS topic ID to write the record to. Must be an open topic you own or have access to." },
         record_type: { type: "string", description: "Type of compliance record (e.g. transaction, approval, audit_event)" },
         entity_id: { type: "string", description: "ID of the entity this record relates to" },
         data: { type: "object", description: "The compliance data to record (any JSON object)" },
         api_key: { type: "string", description: "Your HederaIntel API key" },
       },
-      required: ["record_type", "entity_id", "data", "api_key"],
+      required: ["topic_id", "record_type", "entity_id", "data", "api_key"],
     },
   },
   {
@@ -98,7 +98,15 @@ export async function executeComplianceTool(name, args) {
   if (name === "hcs_write_record") {
     const payment = chargeForTool("hcs_write_record", args.api_key);
     const client = getClient();
-    const topicId = args.topic_id || PLATFORM_TOPIC;
+    if (!args.topic_id) {
+      return {
+        error: true,
+        reason: "topic_id is required. Pass the HCS topic ID you want to write to.",
+        timestamp: new Date().toISOString(),
+      };
+    }
+
+    const topicId = args.topic_id;
 
     const record = {
       record_id: crypto.randomUUID(),
