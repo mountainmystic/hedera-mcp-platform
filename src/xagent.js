@@ -162,7 +162,7 @@ async function callTool(toolName, toolArgs = {}) {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "Accept": "application/json",
+        "Accept": "application/json, text/event-stream",
         "Content-Length": Buffer.byteLength(body),
       },
     }, res => {
@@ -172,10 +172,11 @@ async function callTool(toolName, toolArgs = {}) {
         try {
           console.error(`[XAgent] Raw response for ${toolName} (${data.length} bytes):`, data.slice(0, 300));
 
-          // StreamableHTTPServerTransport returns newline-delimited JSON.
-          // Try each line as a JSON-RPC response until one has the result.
+          // SSE format: lines prefixed with "data: ", strip prefix before parsing.
           let content = null;
-          const lines = data.split("\n").map(l => l.trim()).filter(Boolean);
+          const lines = data.split("\n")
+            .filter(l => l.startsWith("data:"))
+            .map(l => l.replace(/^data:\s*/, "").trim());
           for (const line of lines) {
             try {
               const parsed = JSON.parse(line);
