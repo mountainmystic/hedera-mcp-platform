@@ -162,7 +162,7 @@ async function callTool(toolName, toolArgs = {}) {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "Accept": "application/json, text/event-stream",
+        "Accept": "application/json",
         "Content-Length": Buffer.byteLength(body),
       },
     }, res => {
@@ -171,28 +171,26 @@ async function callTool(toolName, toolArgs = {}) {
       res.on("end", () => {
         try {
           console.error(`[XAgent] Raw response for ${toolName} (${data.length} bytes):`, data.slice(0, 300));
-          const lines = data.split("\n")
-            .filter(l => l.startsWith("data:"))
-            .map(l => l.replace(/^data:\s*/, "").trim())
-            .filter(l => l && l !== "[DONE]");
+
+          // StreamableHTTPServerTransport returns newline-delimited JSON.
+          // Try each line as a JSON-RPC response until one has the result.
           let content = null;
-          for (let i = lines.length - 1; i >= 0; i--) {
+          const lines = data.split("\n").map(l => l.trim()).filter(Boolean);
+          for (const line of lines) {
             try {
-              const parsed = JSON.parse(lines[i]);
-              const text = parsed?.result?.content?.[0]?.text
-                || parsed?.params?.content?.[0]?.text
-                || (parsed?.result ? JSON.stringify(parsed.result) : null);
+              const parsed = JSON.parse(line);
+              const text = parsed?.result?.content?.[0]?.text;
               if (text) { content = text; break; }
+              if (parsed?.error) {
+                content = `error: ${parsed.error.message || JSON.stringify(parsed.error)}`;
+                break;
+              }
             } catch { continue; }
           }
-          if (!content) {
-            try {
-              const parsed = JSON.parse(data);
-              content = parsed?.result?.content?.[0]?.text || JSON.stringify(parsed?.result || parsed);
-            } catch { content = null; }
-          }
+
           if (content) {
-            resolve({ tool: toolName, success: true, content });
+            const isError = content.startsWith("error:");
+            resolve({ tool: toolName, success: !isError, content });
           } else {
             console.error(`[XAgent] No content found in response for ${toolName}`);
             resolve({ tool: toolName, success: false, content: "no content in response" });
