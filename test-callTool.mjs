@@ -1,9 +1,4 @@
-// test-callTool.mjs — run with: node --env-file=.env test-callTool.mjs
-// Shows exactly what /mcp returns so we can fix the xagent parser.
-
-import https from "https";
-
-const XAGENT_KEY = process.env.XAGENT_API_KEY || "0.0.7925398"; // xagent account
+// REMOVE THIS FILE — temporary debug script, not needed
 
 const body = JSON.stringify({
   jsonrpc: "2.0",
