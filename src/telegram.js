@@ -4,23 +4,21 @@
 // Registers webhook with Telegram on startup.
 
 import https from "https";
-import { handleVisionForgeCommand } from "./visionforge.js";
 import { handleXAgentEdit } from "./xagent.js";
 
 const BOT_TOKEN  = process.env.TELEGRAM_BOT_TOKEN;
-const OWNER_ID   = process.env.TELEGRAM_OWNER_ID;   // your personal Telegram user ID
-// Railway exposes the public URL in different vars depending on version
-const RAILWAY_URL = 
+const OWNER_ID   = process.env.TELEGRAM_OWNER_ID;
+const RAILWAY_URL =
   (process.env.RAILWAY_PUBLIC_DOMAIN ? `https://${process.env.RAILWAY_PUBLIC_DOMAIN}` : null) ||
   (process.env.RAILWAY_STATIC_URL) ||
   (process.env.PUBLIC_URL) ||
-  "https://api.hederatoolbox.com"; // hardcoded fallback
+  "https://api.hederatoolbox.com";
 
-// ─── Telegram API helper ────────────────────────────────────────────────────
+// --- Telegram API helper ------------------------------------------------------
 
 function telegramRequest(method, payload) {
   return new Promise((resolve, reject) => {
-    if (!BOT_TOKEN) return resolve(null); // silently no-op if not configured
+    if (!BOT_TOKEN) return resolve(null);
     const body = JSON.stringify(payload);
     const req = https.request({
       hostname: "api.telegram.org",
@@ -38,43 +36,34 @@ function telegramRequest(method, payload) {
   });
 }
 
-// Send a plain text message to any chat ID
 export async function sendMessage(chatId, text, options = {}) {
-  return telegramRequest("sendMessage", {
-    chat_id: chatId,
-    text,
-    parse_mode: "HTML",
-    ...options,
-  });
+  return telegramRequest("sendMessage", { chat_id: chatId, text, parse_mode: "HTML", ...options });
 }
 
-// Send a notification to the owner only
 export async function notifyOwner(text) {
   if (!OWNER_ID) return;
   return sendMessage(OWNER_ID, text);
 }
 
-// ─── Owner notifications ─────────────────────────────────────────────────────
+// --- Owner notifications ------------------------------------------------------
 
-// Called by watcher.js whenever a new deposit lands
 export async function notifyDeposit({ accountId, depositHbar, balanceHbar, txId, usdValue }) {
   if (!BOT_TOKEN || !OWNER_ID) return;
-  const msg =
+  return notifyOwner(
     `💰 <b>New deposit</b>\n\n` +
     `Account: <code>${accountId}</code>\n` +
     `Amount:  <b>${depositHbar} ℏ</b>${usdValue ? ` (~${usdValue})` : ""}\n` +
     `Balance: ${balanceHbar} ℏ\n` +
-    `TX: <code>${txId}</code>`;
-  return notifyOwner(msg);
+    `TX: <code>${txId}</code>`
+  );
 }
 
-// Called by watcher.js when repeated poll failures occur
 export async function notifyWatcherError(message) {
   if (!BOT_TOKEN || !OWNER_ID) return;
   return notifyOwner(`⚠️ <b>Watcher error</b>\n\n${message}`);
 }
 
-// ─── System prompt for the assistant ─────────────────────────────────────────
+// --- System prompt ------------------------------------------------------------
 
 const SYSTEM_PROMPT = `You are the HederaToolbox support assistant on Telegram. Your job is to help people understand what these products do and how to get started — in plain, clear language. Many people you speak with are not blockchain developers. Meet them where they are.
 
@@ -166,9 +155,9 @@ BEHAVIOUR RULES
 - If someone mentions enterprise use, volume pricing, or partnership, use ESCALATE.
 - Never reveal internal implementation details or environment variables.
 - Do not discuss competitors.
-- If someone seems unfamiliar with blockchain or crypto, skip the jargon and explain in plain English. Never assume they know what HBAR, HCS, DID, or MCP means — always define terms on first use.
-- Lead with the benefit or use case, not the technical mechanism. "You can check any token's price and whale activity in real time" is better than "call token_monitor which queries the Hedera mirror node."
-- If someone seems confused about what the product actually does, back up and explain the value from scratch. Don't repeat technical explanations — find a different angle.
+- If someone seems unfamiliar with blockchain or crypto, skip the jargon and explain in plain English.
+- Lead with the benefit or use case, not the technical mechanism.
+- If someone seems confused about what the product actually does, back up and explain the value from scratch.
 
 ESCALATION
 If you need to escalate, end your reply with exactly this line (nothing after it):
@@ -177,7 +166,7 @@ ESCALATE: <one sentence summary of what needs attention>
 OUT OF SCOPE
 Anything unrelated to HederaToolbox, Fixatum, Hedera blockchain tools, or MCP. Politely redirect.`;
 
-// ─── Claude-powered response ──────────────────────────────────────────────────
+// --- Claude-powered response --------------------------------------------------
 
 async function getAIResponse(userMessage, chatHistory = []) {
   const ANTHROPIC_KEY = process.env.ANTHROPIC_API_KEY;
@@ -187,10 +176,7 @@ async function getAIResponse(userMessage, chatHistory = []) {
     model: "claude-haiku-4-5-20251001",
     max_tokens: 600,
     system: SYSTEM_PROMPT,
-    messages: [
-      ...chatHistory,
-      { role: "user", content: userMessage },
-    ],
+    messages: [...chatHistory, { role: "user", content: userMessage }],
   });
 
   return new Promise((resolve) => {
@@ -208,12 +194,8 @@ async function getAIResponse(userMessage, chatHistory = []) {
       let data = "";
       res.on("data", c => data += c);
       res.on("end", () => {
-        try {
-          const parsed = JSON.parse(data);
-          resolve(parsed.content?.[0]?.text || "Sorry, I couldn't generate a response.");
-        } catch {
-          resolve("Sorry, something went wrong. Please try again.");
-        }
+        try { resolve(JSON.parse(data).content?.[0]?.text || "Sorry, I couldn't generate a response."); }
+        catch { resolve("Sorry, something went wrong. Please try again."); }
       });
     });
     req.on("error", () => resolve("I'm having connectivity issues. Please try again shortly."));
@@ -222,26 +204,22 @@ async function getAIResponse(userMessage, chatHistory = []) {
   });
 }
 
-// ─── Conversation memory (in-process, resets on redeploy) ────────────────────
-// Stores last 10 messages per chat to give Claude context.
+// --- Conversation memory (resets on redeploy) ---------------------------------
+
 const conversationHistory = new Map();
 
-function getHistory(chatId) {
-  return conversationHistory.get(chatId) || [];
-}
+function getHistory(chatId) { return conversationHistory.get(chatId) || []; }
 
 function addToHistory(chatId, role, content) {
   const history = getHistory(chatId);
   history.push({ role, content });
-  // Keep last 5 exchanges (10 messages) — intentionally resets on redeploy
   if (history.length > 10) history.splice(0, history.length - 10);
   conversationHistory.set(chatId, history);
 }
 
-// ─── Handle incoming Telegram update ─────────────────────────────────────────
+// --- Handle incoming Telegram update ------------------------------------------
 
 export async function handleTelegramUpdate(update) {
-  // Handle inline button taps (callback_query from xagent drafts)
   if (update.callback_query) {
     const { handleXAgentCallback } = await import("./xagent.js");
     return handleXAgentCallback(update.callback_query);
@@ -254,9 +232,9 @@ export async function handleTelegramUpdate(update) {
   const userId   = msg.from?.id;
   const username = msg.from?.username ? `@${msg.from.username}` : msg.from?.first_name || "Someone";
   const text     = msg.text.trim();
+  const isOwner  = String(userId) === String(OWNER_ID);
 
-  // /edit <text> — owner revises a draft tweet for copy-paste
-  const isOwner = String(userId) === String(OWNER_ID);
+  // /edit <text>
   if (text.startsWith("/edit ") && isOwner) {
     const newText = text.slice(6).trim();
     if (!newText) return sendMessage(chatId, "Usage: /edit <revised tweet text>");
@@ -264,7 +242,7 @@ export async function handleTelegramUpdate(update) {
     return handleXAgentEdit(chatId, newText);
   }
 
-  // /xagent — trigger a manual run (owner only)
+  // /xagent
   if (text === "/xagent") {
     if (!isOwner) return sendMessage(chatId, "⛔ Owner only.");
     await sendMessage(chatId, "▶️ Running XAgent cycle now...");
@@ -273,7 +251,7 @@ export async function handleTelegramUpdate(update) {
     return;
   }
 
-  // /next — step to the next profile and generate a draft (owner only)
+  // /next
   if (text === "/next") {
     if (!isOwner) return sendMessage(chatId, "⛔ Owner only.");
     const { runXAgentCycle, getCurrentProfileInfo } = await import("./xagent.js");
@@ -283,14 +261,14 @@ export async function handleTelegramUpdate(update) {
     return;
   }
 
-  // /queue — show the upcoming profile rotation (owner only)
+  // /queue
   if (text === "/queue") {
     if (!isOwner) return sendMessage(chatId, "⛔ Owner only.");
     const { getQueueInfo } = await import("./xagent.js");
     return sendMessage(chatId, getQueueInfo());
   }
 
-  // /start command
+  // /start
   if (text === "/start") {
     return sendMessage(chatId,
       `👋 <b>Welcome to HederaToolbox</b>\n\n` +
@@ -299,7 +277,7 @@ export async function handleTelegramUpdate(update) {
     );
   }
 
-  // /help command
+  // /help
   if (text === "/help") {
     return sendMessage(chatId,
       `<b>HederaToolbox Bot</b>\n\n` +
@@ -312,17 +290,14 @@ export async function handleTelegramUpdate(update) {
     );
   }
 
-  // ── Owner-only commands ───────────────────────────────────────────────────
-
-  // /status — platform health snapshot
+  // /status
   if (text === "/status") {
     if (!isOwner) return sendMessage(chatId, "⛔ Owner only.");
     try {
       const { getAllAccounts, getRecentTransactions } = await import("./db.js");
-      const accounts = getAllAccounts();
-      const txs      = getRecentTransactions(500);
+      const accounts  = getAllAccounts();
+      const txs       = getRecentTransactions(500);
       const totalHbar = accounts.reduce((s, a) => s + a.balance_tinybars, 0) / 100_000_000;
-      const last = txs[0]?.timestamp || "none";
       const lastDeposit = accounts
         .filter(a => a.last_used)
         .sort((a, b) => (b.last_used > a.last_used ? 1 : -1))[0]?.last_used || "none";
@@ -331,15 +306,13 @@ export async function handleTelegramUpdate(update) {
         `Accounts: <b>${accounts.length}</b>\n` +
         `Total HBAR held: <b>${totalHbar.toFixed(4)} ℏ</b>\n` +
         `Tool calls (all time): <b>${txs.length}</b>\n` +
-        `Last tool call: <code>${last}</code>\n` +
+        `Last tool call: <code>${txs[0]?.timestamp || "none"}</code>\n` +
         `Last account activity: <code>${lastDeposit}</code>`
       );
-    } catch (e) {
-      return sendMessage(chatId, `❌ Status error: ${e.message}`);
-    }
+    } catch (e) { return sendMessage(chatId, `❌ Status error: ${e.message}`); }
   }
 
-  // /accounts — top 10 by balance
+  // /accounts
   if (text === "/accounts") {
     if (!isOwner) return sendMessage(chatId, "⛔ Owner only.");
     try {
@@ -348,14 +321,11 @@ export async function handleTelegramUpdate(update) {
         .sort((a, b) => b.balance_tinybars - a.balance_tinybars)
         .slice(0, 10);
       if (accounts.length === 0) return sendMessage(chatId, "No accounts yet.");
-      const lines = accounts.map((a, i) => {
-        const hbar = (a.balance_tinybars / 100_000_000).toFixed(4);
-        return `${i + 1}. <code>${a.api_key}</code> — <b>${hbar} ℏ</b>`;
-      }).join("\n");
+      const lines = accounts.map((a, i) =>
+        `${i + 1}. <code>${a.api_key}</code> — <b>${(a.balance_tinybars / 100_000_000).toFixed(4)} ℏ</b>`
+      ).join("\n");
       return sendMessage(chatId, `🏆 <b>Top accounts by balance</b>\n\n${lines}`);
-    } catch (e) {
-      return sendMessage(chatId, `❌ Error: ${e.message}`);
-    }
+    } catch (e) { return sendMessage(chatId, `❌ Error: ${e.message}`); }
   }
 
   // /balance <account_id>
@@ -367,37 +337,30 @@ export async function handleTelegramUpdate(update) {
       const { getAccount } = await import("./db.js");
       const account = getAccount(accountId);
       if (!account) return sendMessage(chatId, `❌ Account <code>${accountId}</code> not found.`);
-      const hbar = (account.balance_tinybars / 100_000_000).toFixed(4);
       return sendMessage(chatId,
         `💳 <b>Account lookup</b>\n\n` +
         `ID: <code>${account.api_key}</code>\n` +
-        `Balance: <b>${hbar} ℏ</b>\n` +
+        `Balance: <b>${(account.balance_tinybars / 100_000_000).toFixed(4)} ℏ</b>\n` +
         `Created: ${account.created_at}\n` +
         `Last used: ${account.last_used || "never"}`
       );
-    } catch (e) {
-      return sendMessage(chatId, `❌ Error: ${e.message}`);
-    }
+    } catch (e) { return sendMessage(chatId, `❌ Error: ${e.message}`); }
   }
 
-  // /digest — activity summary for the last 24 hours
+  // /digest
   if (text === "/digest") {
     if (!isOwner) return sendMessage(chatId, "⛔ Owner only.");
     try {
       const { getRecentTransactions, getAllAccounts } = await import("./db.js");
-      const allTxs  = getRecentTransactions(1000);
-      const since   = new Date(Date.now() - 86_400_000).toISOString().slice(0, 19);
-      const recent  = allTxs.filter(t => t.timestamp >= since);
-      const earned  = recent.reduce((s, t) => s + t.amount_tinybars, 0) / 100_000_000;
-      // Tool usage breakdown
+      const allTxs = getRecentTransactions(1000);
+      const since  = new Date(Date.now() - 86_400_000).toISOString().slice(0, 19);
+      const recent = allTxs.filter(t => t.timestamp >= since);
+      const earned = recent.reduce((s, t) => s + t.amount_tinybars, 0) / 100_000_000;
       const toolCounts = {};
       for (const t of recent) toolCounts[t.tool_name] = (toolCounts[t.tool_name] || 0) + 1;
       const topTools = Object.entries(toolCounts)
-        .sort((a, b) => b[1] - a[1])
-        .slice(0, 5)
-        .map(([name, count]) => `  ${name}: ${count}`)
-        .join("\n") || "  none";
-      // Unique active accounts
+        .sort((a, b) => b[1] - a[1]).slice(0, 5)
+        .map(([name, count]) => `  ${name}: ${count}`).join("\n") || "  none";
       const activeAccounts = new Set(recent.map(t => t.api_key)).size;
       return sendMessage(chatId,
         `📅 <b>Last 24h digest</b>\n\n` +
@@ -406,79 +369,58 @@ export async function handleTelegramUpdate(update) {
         `Active accounts: <b>${activeAccounts}</b>\n\n` +
         `<b>Top tools:</b>\n${topTools}`
       );
-    } catch (e) {
-      return sendMessage(chatId, `❌ Digest error: ${e.message}`);
-    }
+    } catch (e) { return sendMessage(chatId, `❌ Digest error: ${e.message}`); }
   }
 
-  // Add user message to history
+  // /edit (owner, inline)
+  if (isOwner && text.startsWith("/edit ")) {
+    const newText = text.replace(/^\/edit\s+/, "").trim();
+    if (newText) { await handleXAgentEdit(chatId, newText); return; }
+  }
+
+  // AI response
   addToHistory(chatId, "user", text);
-
-  // Owner command routing — /approve, /skip (VisionForge), /edit (XAgent)
-  if (isOwner) {
-    if (text.startsWith("/approve") || text.startsWith("/skip")) {
-      const handled = await handleVisionForgeCommand(chatId, text);
-      if (handled) return;
-    }
-    if (text.startsWith("/edit ")) {
-      const newText = text.replace(/^\/edit\s+/, "").trim();
-      if (newText) { await handleXAgentEdit(chatId, newText); return; }
-    }
-  }
-
-  // Show typing indicator
   await telegramRequest("sendChatAction", { chat_id: chatId, action: "typing" });
 
-  // Get AI response — wrapped so any unexpected throw still sends a message
   let aiReply;
   try {
     const history = getHistory(chatId);
-    aiReply = await getAIResponse(text, history.slice(0, -1)); // exclude the message we just added
+    aiReply = await getAIResponse(text, history.slice(0, -1));
   } catch (err) {
     console.error("[Telegram] getAIResponse threw:", err.message);
-    // Remove the user message we added — failed turn shouldn't pollute history
     const h = getHistory(chatId);
     if (h.length && h[h.length - 1].role === "user") h.pop();
     return sendMessage(chatId, "Sorry, I hit an error generating a response. Please try again.");
   }
 
-  // If the AI returned a connectivity/error string, don't store it as a real reply
   const isErrorReply = !aiReply ||
     aiReply.startsWith("I'm having") ||
     aiReply.startsWith("Sorry, something went wrong") ||
     aiReply.startsWith("Sorry, I couldn't");
 
   if (isErrorReply) {
-    // Remove the user message too — this turn never really happened
     const h = getHistory(chatId);
     if (h.length && h[h.length - 1].role === "user") h.pop();
     return sendMessage(chatId, aiReply || "Sorry, I hit an error. Please try again.");
   }
 
-  // Check for escalation signal
   const escalateMatch = aiReply.match(/ESCALATE:\s*(.+)$/m);
-  let replyText = aiReply.replace(/\nESCALATE:.+$/m, "").trim();
-
-  // Add assistant reply to history (without the escalate line)
+  const replyText = aiReply.replace(/\nESCALATE:.+$/m, "").trim();
   addToHistory(chatId, "assistant", replyText);
-
-  // Send reply to user
   await sendMessage(chatId, replyText);
 
-  // If escalation needed, notify owner
   if (escalateMatch && OWNER_ID) {
-    const summary = escalateMatch[1].trim();
     await notifyOwner(
       `🚨 <b>Escalation needed</b>\n\n` +
       `From: ${username} (chat ID: <code>${chatId}</code>)\n` +
       `Message: "<i>${text}</i>"\n\n` +
-      `Reason: ${summary}\n\n` +
+      `Reason: ${escalateMatch[1].trim()}\n\n` +
       `Reply to them at: https://t.me/${msg.from?.username || chatId}`
     );
   }
 }
 
-// ─── Webhook registration ─────────────────────────────────────────────────────
+// --- Webhook registration -----------------------------------------------------
 
 export async function registerWebhook() {
   if (!BOT_TOKEN) {
@@ -488,22 +430,16 @@ export async function registerWebhook() {
 
   const webhookUrl = `${RAILWAY_URL}/telegram/webhook`;
   console.error(`[Telegram] Registering webhook at: ${webhookUrl}`);
-  console.error(`[Telegram] OWNER_ID set: ${!!OWNER_ID} (${OWNER_ID})`);
 
   try {
     const result = await telegramRequest("setWebhook", { url: webhookUrl });
-    console.error(`[Telegram] setWebhook response:`, JSON.stringify(result));
-
     if (result?.ok) {
-      console.error(`[Telegram] ✅ Webhook registered successfully`);
-      if (OWNER_ID) {
-        const notifyResult = await notifyOwner(`✅ <b>HederaToolbox bot started</b>\nWebhook: ${webhookUrl}`);
-        console.error(`[Telegram] Startup notification sent:`, JSON.stringify(notifyResult));
-      }
+      console.error(`[Telegram] Webhook registered successfully`);
+      if (OWNER_ID) await notifyOwner(`✅ <b>HederaToolbox bot started</b>\nWebhook: ${webhookUrl}`);
     } else {
-      console.error(`[Telegram] ❌ Webhook registration failed:`, JSON.stringify(result));
+      console.error(`[Telegram] Webhook registration failed:`, JSON.stringify(result));
     }
   } catch (err) {
-    console.error(`[Telegram] ❌ Webhook registration error:`, err.message);
+    console.error(`[Telegram] Webhook registration error:`, err.message);
   }
 }
