@@ -13,7 +13,7 @@ const TERMS = JSON.parse(readFileSync(path.join(__dirname, "../legal/terms.json"
 const { version: VERSION } = JSON.parse(readFileSync(path.join(__dirname, "../package.json"), "utf-8"));
 import { startWatcher } from "./watcher.js";
 import { handleTelegramUpdate, registerWebhook } from "./telegram.js";
-import { scheduleVisionForge, handleVisionForgeCommand } from "./visionforge.js";
+import { scheduleVisionForge } from "./visionforge.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import http from "http";
 
