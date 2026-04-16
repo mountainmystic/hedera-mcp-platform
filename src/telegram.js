@@ -4,6 +4,7 @@
 // Registers webhook with Telegram on startup.
 
 import https from "https";
+import http from "http";
 import { handleXAgentEdit } from "./xagent.js";
 
 const BOT_TOKEN  = process.env.TELEGRAM_BOT_TOKEN;
@@ -13,6 +14,10 @@ const RAILWAY_URL =
   (process.env.RAILWAY_STATIC_URL) ||
   (process.env.PUBLIC_URL) ||
   "https://api.hederatoolbox.com";
+
+// Narrator internal URL — Railway internal networking or public domain
+// Set NARRATOR_URL in Railway env vars to the Narrator service's internal URL
+const NARRATOR_URL = process.env.NARRATOR_URL || null;
 
 // --- Telegram API helper ------------------------------------------------------
 
@@ -43,6 +48,31 @@ export async function sendMessage(chatId, text, options = {}) {
 export async function notifyOwner(text) {
   if (!OWNER_ID) return;
   return sendMessage(OWNER_ID, text);
+}
+
+// --- Forward update to Narrator ----------------------------------------------
+// Sends the raw Telegram update to Narrator's webhook endpoint so it can
+// handle /narrator, /approve, /skip, /revise commands directly.
+
+function forwardToNarrator(update) {
+  if (!NARRATOR_URL) return;
+  try {
+    const urlObj  = new URL(NARRATOR_URL + "/telegram/webhook");
+    const mod     = urlObj.protocol === "https:" ? https : http;
+    const payload = JSON.stringify(update);
+    const req     = mod.request({
+      hostname: urlObj.hostname,
+      port:     urlObj.port || undefined,
+      path:     urlObj.pathname,
+      method:   "POST",
+      headers:  { "Content-Type": "application/json", "Content-Length": Buffer.byteLength(payload) },
+    }, res => { res.on("data", () => {}); });
+    req.on("error", e => console.error("[Telegram] Narrator forward error:", e.message));
+    req.write(payload);
+    req.end();
+  } catch (e) {
+    console.error("[Telegram] Narrator forward failed:", e.message);
+  }
 }
 
 // --- Owner notifications ------------------------------------------------------
@@ -217,6 +247,14 @@ function addToHistory(chatId, role, content) {
   conversationHistory.set(chatId, history);
 }
 
+// --- Narrator command keywords -----------------------------------------------
+
+const NARRATOR_COMMANDS = ["/narrator", "/approve", "/skip", "/revise"];
+
+function isNarratorCommand(text) {
+  return NARRATOR_COMMANDS.some(cmd => text === cmd || text.startsWith(cmd + " "));
+}
+
 // --- Handle incoming Telegram update ------------------------------------------
 
 export async function handleTelegramUpdate(update) {
@@ -233,6 +271,17 @@ export async function handleTelegramUpdate(update) {
   const username = msg.from?.username ? `@${msg.from.username}` : msg.from?.first_name || "Someone";
   const text     = msg.text.trim();
   const isOwner  = String(userId) === String(OWNER_ID);
+
+  // --- Narrator commands — forward to Narrator service ----------------------
+  if (isOwner && isNarratorCommand(text)) {
+    if (!NARRATOR_URL) {
+      return sendMessage(chatId, "Narrator not configured — set NARRATOR_URL in Railway env vars.");
+    }
+    forwardToNarrator(update);
+    // Acknowledge immediately — Narrator will send its own response
+    if (text === "/narrator") await sendMessage(chatId, "Running Narrator cycle...");
+    return;
+  }
 
   // /edit <text>
   if (text.startsWith("/edit ") && isOwner) {
