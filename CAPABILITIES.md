@@ -60,7 +60,7 @@ It allows AI agents to query, analyze, and write compliance records to Hedera. I
 - Query live KYA (Know Your Agent) trust score (0–100) and component breakdown for any registered agent
 - Check registration status and provenance binding for any Hedera account
 - `fixatum_score` and `fixatum_status` are free, no consent required
-- `fixatum_register` costs 105 HBAR (100 forwarded to Fixatum, 5 platform fee)
+- `fixatum_register` costs 100 HBAR (one-time registration fee, paid directly to Fixatum)
 
 ---
 

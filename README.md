@@ -232,7 +232,7 @@ Terms of Service: `get_terms` tool or [/public/terms.json](https://api.hederatoo
 
 | Tool | Cost | Description |
 |------|------|-------------|
-| `hcs_write_record` | 5.00 HBAR | Write tamper-evident record to HCS |
+| `hcs_write_record` | 0.10 HBAR | Write tamper-evident record to HCS |
 | `hcs_verify_record` | 1.00 HBAR | Verify a record has not been altered |
 | `hcs_audit_trail` | 2.00 HBAR | Full chronological audit history for an entity |
 
@@ -285,7 +285,7 @@ Register agents on [Fixatum](https://fixatum.com) — a W3C DID issuance and KYA
 
 | Tool | Cost | Description |
 |------|------|-------------|
-| `fixatum_register` | 105 HBAR | Register for a permanent W3C DID anchored to Hedera HCS and a live KYA trust score |
+| `fixatum_register` | 100 HBAR | Register for a permanent W3C DID anchored to Hedera HCS and a live KYA trust score |
 | `fixatum_score` | Free | Query live KYA score (0–100, grade A–F) and component breakdown for any registered agent |
 | `fixatum_status` | Free | Check registration status, current score, and whether provenance is actively building |
 
