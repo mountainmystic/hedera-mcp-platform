@@ -7,7 +7,7 @@ import { GOVERNANCE_TOOL_DEFINITIONS, executeGovernanceTool } from "./modules/go
 import { TOKEN_TOOL_DEFINITIONS, executeTokenTool } from "./modules/token/tools.js";
 import { IDENTITY_TOOL_DEFINITIONS, executeIdentityTool } from "./modules/identity/tools.js";
 import { CONTRACT_TOOL_DEFINITIONS, executeContractTool } from "./modules/contract/tools.js";
-import { FIXATUM_TOOL_DEFINITIONS, executeFixatumTool } from "./modules/fixatum/tools.js";
+import { FIXATUM_TOOL_DEFINITIONS, FIXATUM_FLEET_TOOL_DEFINITIONS, executeFixatumTool } from "./modules/fixatum/tools.js";
 import { ACCOUNT_TOOL_DEFINITIONS, executeAccountTool } from "./modules/account/tools.js";
 import { LEGAL_TOOL_DEFINITIONS, executeLegalTool } from "./modules/legal/tools.js";
 import { checkConsent } from "./consent.js";
@@ -32,10 +32,11 @@ export const ALL_TOOLS = [
   ...IDENTITY_TOOL_DEFINITIONS,
   ...CONTRACT_TOOL_DEFINITIONS,
   ...FIXATUM_TOOL_DEFINITIONS,
+  ...FIXATUM_FLEET_TOOL_DEFINITIONS,
 ];
 
 // Tools that bypass consent entirely
-const FREE_TOOLS = new Set(["account_info", "get_terms", "confirm_terms", "fixatum_score", "fixatum_status"]);
+const FREE_TOOLS = new Set(["account_info", "get_terms", "confirm_terms", "fixatum_score", "fixatum_status", "fixatum_fleet_status", "fixatum_fleet_inbox"]);
 
 // ── API key validation ────────────────────────────────────────────────────────
 // Reject keys that are empty, too long, or clearly malformed.
@@ -97,6 +98,8 @@ async function routeTool(name, args, req) {
     result = await executeIdentityTool(name, args);
   } else if (["contract_read", "contract_call", "contract_analyze"].includes(name)) {
     result = await executeContractTool(name, args);
+  } else if (["fixatum_fleet_status", "fixatum_fleet_inbox"].includes(name)) {
+    result = await executeFixatumTool(name, args);
   } else if (["fixatum_register", "fixatum_score", "fixatum_status"].includes(name)) {
     result = await executeFixatumTool(name, args);
   } else {
@@ -106,7 +109,7 @@ async function routeTool(name, args, req) {
   // ── Provenance ────────────────────────────────────────────────────
   // fixatum_score and fixatum_status are free read-only queries — no provenance needed.
   // fixatum_register is infrastructure, not a data query — no provenance.
-  if (["fixatum_register", "fixatum_score", "fixatum_status"].includes(name)) return result;
+  if (["fixatum_register", "fixatum_score", "fixatum_status", "fixatum_fleet_status", "fixatum_fleet_inbox"].includes(name)) return result;
 
   // Fire-and-forget — never blocks or fails the tool response.
   // inputs_summary: key args minus api_key (no credentials in provenance)

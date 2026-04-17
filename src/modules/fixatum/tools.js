@@ -5,6 +5,8 @@ import { chargeForTool } from "../../payments.js";
 const FIXATUM_BASE = "https://did.fixatum.com";
 const FIXATUM_WALLET = "0.0.10394452";
 const FETCH_TIMEOUT_MS = 5000;
+const MIDAS_ACCOUNT = "0.0.10435510"; // only account authorised for fleet tools
+const FIXATUM_ADMIN_SECRET = process.env.FIXATUM_ADMIN_SECRET;
 
 // ── Hedera SDK client (ECDSA, same pattern as compliance/tools.js) ────────────
 let hederaClient;
@@ -22,11 +24,11 @@ function getClient() {
 }
 
 // ── Fixatum API fetch with timeout ────────────────────────────────────────────
-async function fixatumGet(path) {
+async function fixatumGet(path, extraHeaders = {}) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
   try {
-    const res = await fetch(`${FIXATUM_BASE}${path}`, { signal: controller.signal });
+    const res = await fetch(`${FIXATUM_BASE}${path}`, { signal: controller.signal, headers: extraHeaders });
     clearTimeout(timer);
     if (!res.ok) return { ok: false, status: res.status, data: null };
     const data = await res.json();
@@ -38,6 +40,50 @@ async function fixatumGet(path) {
 }
 
 // ── Tool definitions ──────────────────────────────────────────────────────────
+
+// ── Fleet tools (Midas-only, free, server-side auth) ────────────────────────
+export const FIXATUM_FLEET_TOOL_DEFINITIONS = [
+  {
+    name: "fixatum_fleet_status",
+    description:
+      "Read all agent statuses and inbox count from the Fixatum agent communication layer. Returns latest report from each agent (VisionForge, Scout, Narrator) plus unresolved inbox item count. Free. Only callable by Midas (0.0.10435510).",
+    annotations: {
+      title: "Fleet Agent Status",
+      readOnlyHint: true,
+      destructiveHint: false,
+    },
+    inputSchema: {
+      type: "object",
+      properties: {
+        api_key: {
+          type: "string",
+          description: "Your HederaToolbox API key. Must be Midas account (0.0.10435510).",
+        },
+      },
+      required: ["api_key"],
+    },
+  },
+  {
+    name: "fixatum_fleet_inbox",
+    description:
+      "Read unresolved flagged items from the Fixatum agent inbox. Returns items posted by Scout, Narrator, or other agents requiring Midas attention. Free. Only callable by Midas (0.0.10435510).",
+    annotations: {
+      title: "Fleet Agent Inbox",
+      readOnlyHint: true,
+      destructiveHint: false,
+    },
+    inputSchema: {
+      type: "object",
+      properties: {
+        api_key: {
+          type: "string",
+          description: "Your HederaToolbox API key. Must be Midas account (0.0.10435510).",
+        },
+      },
+      required: ["api_key"],
+    },
+  },
+];
 
 export const FIXATUM_TOOL_DEFINITIONS = [
   {
@@ -363,6 +409,75 @@ export async function executeFixatumTool(name, args) {
       provenance_bound: provenanceBound,
       hedera_account_id,
       score_url: `https://did.fixatum.com/score/${did}`,
+      timestamp: new Date().toISOString(),
+    };
+  }
+
+  // ── fixatum_fleet_status ────────────────────────────────────────────────────
+  if (name === "fixatum_fleet_status") {
+    const { api_key } = args;
+    if (api_key !== MIDAS_ACCOUNT) {
+      return {
+        error: "Access denied. fixatum_fleet_status is restricted to the Midas operator account.",
+        timestamp: new Date().toISOString(),
+      };
+    }
+    if (!FIXATUM_ADMIN_SECRET) {
+      return {
+        error: "FIXATUM_ADMIN_SECRET not configured on this Toolbox instance.",
+        timestamp: new Date().toISOString(),
+      };
+    }
+    const headers = { "x-admin-secret": FIXATUM_ADMIN_SECRET, "Accept": "application/json" };
+    const [statusRes, inboxRes] = await Promise.all([
+      fixatumGet("/agent-status", headers),
+      fixatumGet("/agent-inbox",  headers),
+    ]);
+    if (!statusRes.ok) {
+      return {
+        error: `Fixatum /agent-status returned ${statusRes.status}`,
+        timestamp: new Date().toISOString(),
+      };
+    }
+    const unresolvedCount = Array.isArray(inboxRes.data?.items)
+      ? inboxRes.data.items.filter(i => !i.resolved).length
+      : (inboxRes.ok ? 0 : null);
+    return {
+      ...statusRes.data,
+      inbox_unresolved_count: unresolvedCount,
+      timestamp: new Date().toISOString(),
+    };
+  }
+
+  // ── fixatum_fleet_inbox ──────────────────────────────────────────────────────
+  if (name === "fixatum_fleet_inbox") {
+    const { api_key } = args;
+    if (api_key !== MIDAS_ACCOUNT) {
+      return {
+        error: "Access denied. fixatum_fleet_inbox is restricted to the Midas operator account.",
+        timestamp: new Date().toISOString(),
+      };
+    }
+    if (!FIXATUM_ADMIN_SECRET) {
+      return {
+        error: "FIXATUM_ADMIN_SECRET not configured on this Toolbox instance.",
+        timestamp: new Date().toISOString(),
+      };
+    }
+    const headers = { "x-admin-secret": FIXATUM_ADMIN_SECRET, "Accept": "application/json" };
+    const inboxRes = await fixatumGet("/agent-inbox", headers);
+    if (!inboxRes.ok) {
+      return {
+        error: `Fixatum /agent-inbox returned ${inboxRes.status}`,
+        timestamp: new Date().toISOString(),
+      };
+    }
+    const items = Array.isArray(inboxRes.data?.items)
+      ? inboxRes.data.items.filter(i => !i.resolved)
+      : [];
+    return {
+      unresolved_count: items.length,
+      items,
       timestamp: new Date().toISOString(),
     };
   }
