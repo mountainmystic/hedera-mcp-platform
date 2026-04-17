@@ -31,7 +31,7 @@ Built for agents that need to *reason* about Hedera, not just interact with it.
 
 ## Autonomous Agent Examples
 
-Four production-ready agents in [`examples/`](examples/). Clone the repo, fund once, run. Zero dependencies beyond Node.js 18+.
+Five production-ready agents in [`examples/`](examples/). Clone the repo, fund once, run. Zero dependencies beyond Node.js 18+.
 
 **One-time setup for all agents:**
 
@@ -47,6 +47,47 @@ cd hederatoolbox
 > **Windows users:** set env vars before running:
 > `set HEDERA_ACCOUNT_ID=0.0.YOUR_ID && set TOKEN_ID=0.0.731861 && node examples/whale-alert-agent.mjs`
 > Or edit the config constants directly at the top of each file.
+
+---
+
+### 👁️ Agent Reputation Monitor
+**[`examples/agent-reputation-monitor.mjs`](examples/agent-reputation-monitor.mjs)**
+
+Watches a list of [Fixatum](https://fixatum.com)-registered AI agents on a schedule. Detects grade changes and significant score drops — then writes a tamper-proof record to your HCS topic when a change is observed.
+
+Built for platforms that accept agents as counterparties, DAOs monitoring delegate agents, and operators tracking a deployed agent fleet. Polling is free (`fixatum_score` costs nothing) — you only pay 0.1 HBAR when an alert actually fires.
+
+Create a `watched-agents.json` file next to the script:
+
+```json
+[
+  { "did": "did:hedera:mainnet:z..._0.0.123456", "label": "MyAgent" },
+  { "did": "did:hedera:mainnet:z..._0.0.789012", "label": "PartnerAgent" }
+]
+```
+
+Then run:
+
+```bash
+HEDERA_ACCOUNT_ID=0.0.YOUR_ID HCS_TOPIC_ID=0.0.YOUR_TOPIC node examples/agent-reputation-monitor.mjs
+
+# Single agent via env var:
+HEDERA_ACCOUNT_ID=0.0.YOUR_ID HCS_TOPIC_ID=0.0.YOUR_TOPIC WATCH_DID=did:hedera:mainnet:z... node examples/agent-reputation-monitor.mjs
+```
+
+> First run establishes baselines only — no alerts fire on startup.
+> State is saved to `agents-state.json` and survives restarts.
+
+| Config | Default | Description |
+|--------|---------|-------------|
+| `HCS_TOPIC_ID` | required | Your HCS topic for alert records |
+| `CHECK_INTERVAL_H` | `6` | Hours between checks |
+| `DROP_THRESHOLD` | `10` | Point drop that triggers alert regardless of grade |
+| `WATCH_FILE` | `watched-agents.json` | Path to your watch list |
+
+**Cost:** Free to poll · `0.1 ℏ` per alert written to HCS
+
+> Agents without a Fixatum DID cannot be monitored. Get one at [fixatum.com/register](https://fixatum.com/register).
 
 ---
 
