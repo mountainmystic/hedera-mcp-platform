@@ -69,19 +69,34 @@ HEDERA_ACCOUNT_ID=0.0.YOUR_ID TOKEN_ID=0.0.731861 node examples/whale-alert-agen
 
 ---
 
-### ✅ Compliance Onboarding
-**[`examples/compliance-onboarding-agent.mjs`](examples/compliance-onboarding-agent.mjs)**
+### 🔎 Compliance + KYA Onboarding
+**[`examples/compliance-kya-onboarding-agent.mjs`](examples/compliance-kya-onboarding-agent.mjs)**
 
-Screens a Hedera account before doing business with them. Runs identity resolution, sanctions screening, and optional KYC verification in sequence — then writes a tamper-proof compliance record to HCS. Returns `APPROVED`, `REJECTED`, `PENDING_REVIEW`, or `PENDING_KYC`.
+Screens any Hedera account before doing business with them. Runs identity resolution, on-chain risk screening, and optional KYC verification — then pulls a live [Fixatum](https://fixatum.com) KYA trust score (0–100) for free as part of the same run. The full result is written as a single tamper-proof record to your own HCS topic.
+
+Returns `APPROVED`, `REJECTED`, `PENDING_REVIEW`, or `PENDING_KYC`.
+
+Designed for token issuers, DEXes, DAOs, and treasury managers who want auditable counterparty screening with a reputation layer, not just a binary pass/fail.
 
 ```bash
-HEDERA_ACCOUNT_ID=0.0.YOUR_ID SUBJECT=0.0.999999 node examples/compliance-onboarding-agent.mjs
+HEDERA_ACCOUNT_ID=0.0.YOUR_ID HCS_TOPIC_ID=0.0.YOUR_TOPIC SUBJECT=0.0.999999 node examples/compliance-kya-onboarding-agent.mjs
 
-# With KYC check for your token:
-HEDERA_ACCOUNT_ID=0.0.YOUR_ID SUBJECT=0.0.999999 KYC_TOKEN_ID=0.0.731861 node examples/compliance-onboarding-agent.mjs
+# With KYC check and tamper verification:
+HEDERA_ACCOUNT_ID=0.0.YOUR_ID HCS_TOPIC_ID=0.0.YOUR_TOPIC SUBJECT=0.0.999999 KYC_TOKEN_ID=0.0.731861 node examples/compliance-kya-onboarding-agent.mjs
 ```
 
-**Cost:** `~1.7 ℏ` per screening · add `0.5 ℏ` for KYC check
+> `HCS_TOPIC_ID` is required — records write to your own topic, not a shared one. If you have a Fixatum DID, your `agent_topic_id` works here. Get one at [fixatum.com/register](https://fixatum.com/register).
+
+| Config | Default | Description |
+|--------|---------|-------------|
+| `SUBJECT` | `0.0.7925398` | Account to screen |
+| `HCS_TOPIC_ID` | required | Your HCS topic for compliance records |
+| `KYC_TOKEN_ID` | none | Optional: your token ID for KYC check |
+| `SKIP_VERIFY` | `false` | Set `true` to skip tamper verification |
+
+**Cost:** `~1.3 ℏ` base · `~2.3 ℏ` with verify · `~2.8 ℏ` with verify + KYC
+
+> **Note:** `identity_check_sanctions` is on-chain behavioural analysis of Hedera transaction patterns only. It is not a legal sanctions check against any government watchlist.
 
 ---
 
