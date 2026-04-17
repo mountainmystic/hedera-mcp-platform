@@ -10,7 +10,7 @@ import { getHbarPriceUsd, formatUsdCost } from "../../hbar-price.js";
 export const ACCOUNT_TOOL_DEFINITIONS = [
   {
     name: "account_info",
-    description: "Platform wallet, live pricing for all 20 tools in HBAR/USD, and your balance. FREE. Call first to onboard: send HBAR to platform wallet, your Hedera account ID becomes your API key.",
+    description: "Platform wallet, live pricing for all 23 tools in HBAR/USD, and your balance. FREE. Call first to onboard: send HBAR to platform wallet, your Hedera account ID becomes your API key.",
     annotations: { title: "Account Info & Pricing", readOnlyHint: true, destructiveHint: false },
     inputSchema: {
       type: "object",
@@ -76,7 +76,7 @@ async function getAccountInfo(args) {
 
   return {
     service: "HederaToolbox — Hedera MCP Platform",
-    description: "20 tools across 6 modules. Pay per call in HBAR. No registration required.",
+    description: "23 tools across 7 modules. Pay per call in HBAR. No registration required.",
 
     hbar_price_usd: hbarPriceUsd ? `$${hbarPriceUsd.toFixed(4)}` : "unavailable",
     hbar_price_source: "SaucerSwap DEX (live, 5-min cache)",
