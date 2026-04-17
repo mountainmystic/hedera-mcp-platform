@@ -91,25 +91,6 @@ HEDERA_ACCOUNT_ID=0.0.YOUR_ID HCS_TOPIC_ID=0.0.YOUR_TOPIC WATCH_DID=did:hedera:m
 
 ---
 
-### 🐋 Whale Alert Monitor
-**[`examples/whale-alert-agent.mjs`](examples/whale-alert-agent.mjs)**
-
-Monitors any Hedera token for unusual whale concentration on a schedule. When top-10 holders exceed your threshold, writes a tamper-proof `whale_alert` record to HCS and prints the Hashscan proof URL.
-
-```bash
-HEDERA_ACCOUNT_ID=0.0.YOUR_ID TOKEN_ID=0.0.731861 node examples/whale-alert-agent.mjs
-```
-
-| Config | Default | Description |
-|--------|---------|-------------|
-| `TOKEN_ID` | `0.0.731861` | Token to monitor |
-| `THRESHOLD_PCT` | `80` | Alert if top-10 holders exceed this % |
-| `CHECK_INTERVAL_MS` | `3600000` | Check every hour |
-
-**Cost:** `0.2 ℏ` per check · `5 ℏ` only when anomaly fires
-
----
-
 ### 🔎 Compliance + KYA Onboarding
 **[`examples/compliance-kya-onboarding-agent.mjs`](examples/compliance-kya-onboarding-agent.mjs)**
 
@@ -138,6 +119,25 @@ HEDERA_ACCOUNT_ID=0.0.YOUR_ID HCS_TOPIC_ID=0.0.YOUR_TOPIC SUBJECT=0.0.999999 KYC
 **Cost:** `~1.3 ℏ` base · `~2.3 ℏ` with verify · `~2.8 ℏ` with verify + KYC
 
 > **Note:** `identity_check_sanctions` is on-chain behavioural analysis of Hedera transaction patterns only. It is not a legal sanctions check against any government watchlist.
+
+---
+
+### 🐋 Whale Alert Monitor
+**[`examples/whale-alert-agent.mjs`](examples/whale-alert-agent.mjs)**
+
+Monitors any Hedera token for unusual whale concentration on a schedule. When top-10 holders exceed your threshold, writes a tamper-proof `whale_alert` record to HCS and prints the Hashscan proof URL.
+
+```bash
+HEDERA_ACCOUNT_ID=0.0.YOUR_ID TOKEN_ID=0.0.731861 node examples/whale-alert-agent.mjs
+```
+
+| Config | Default | Description |
+|--------|---------|-------------|
+| `TOKEN_ID` | `0.0.731861` | Token to monitor |
+| `THRESHOLD_PCT` | `80` | Alert if top-10 holders exceed this % |
+| `CHECK_INTERVAL_MS` | `3600000` | Check every hour |
+
+**Cost:** `0.2 ℏ` per check · `5 ℏ` only when anomaly fires
 
 ---
 
