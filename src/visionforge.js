@@ -19,8 +19,8 @@ let briefCounter = 0;
 const TOOLBOX_TREASURY_WARN  = 50;   // mirror node balance
 const FIXATUM_TREASURY_WARN  = 20;   // mirror node balance
 const XAGENT_BALANCE_WARN    = 5;    // Toolbox platform balance
-const FIXATUM_TOOLBOX_WARN   = 20;   // Fixatum working capital on Toolbox (~6 registrations)
-const COST_PER_REGISTRATION  = 3.1;  // hcs_create_topic(2.0) + hcs_write_record(0.1) + identity_check_sanctions(1.0)
+const FIXATUM_TOOLBOX_WARN   = 20;   // Fixatum working capital on Toolbox (~9 registrations)
+const COST_PER_REGISTRATION  = 2.1;  // hcs_create_topic(2.0) + hcs_write_record(0.1). identity_check_sanctions now cached 24h — not charged per registration.
 
 // --- Mirror node balance query ------------------------------------------------
 
