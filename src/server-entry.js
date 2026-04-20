@@ -1057,7 +1057,7 @@ function renderFleetAgent(id, name, lastSeen, note) {
   const age = lastSeen ? (Date.now() - new Date(lastSeen).getTime()) / 1000 : null;
   const dotCls = age === null ? 'grey' : age < 7200 ? 'green' : age < 86400 ? 'amber' : 'grey';
   const label = age === null ? 'No data' : timeAgo(lastSeen) + (note ? ' \u00b7 ' + note : '');
-  el.innerHTML = `<div class="fa-name">${name}</div><div class="fa-status"><span class="fa-dot ${dotCls}"></span><span class="fa-label">${label}</span></div>`;
+  el.innerHTML = '<div class="fa-name">' + name + '</div><div class="fa-status"><span class="fa-dot ' + dotCls + '"></span><span class="fa-label">' + label + '</span></div>';
 }
 
 async function loadFleetStatus() {
