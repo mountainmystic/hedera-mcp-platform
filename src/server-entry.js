@@ -417,6 +417,51 @@ const httpServer = http.createServer(async (req, res) => {
     return json(res, 200, { count: records.length, records });
   }
 
+  // Fleet balance endpoint — mirror node queries for Fixatum + TheRecordKeeper wallets
+  if (req.method === "GET" && url.pathname === "/admin/fleet-balances") {
+    if (!isAdmin(req)) return json(res, 401, { error: "Unauthorized" });
+    const FIXATUM_WALLET_ID = "0.0.10394452";
+    const TRK_WALLET_ID     = "0.0.10419731";
+
+    async function mirrorBalance(accountId) {
+      const https2 = (await import("https")).default;
+      return new Promise((resolve) => {
+        const r2 = https2.request({
+          hostname: "mainnet-public.mirrornode.hedera.com",
+          path: `/api/v1/accounts/${accountId}`,
+          method: "GET",
+          headers: { "Accept": "application/json" },
+        }, resp => {
+          let d = "";
+          resp.on("data", c => d += c);
+          resp.on("end", () => {
+            try { resolve((JSON.parse(d)?.balance?.balance ?? 0) / 100_000_000); }
+            catch { resolve(null); }
+          });
+        });
+        r2.on("error", () => resolve(null));
+        r2.end();
+      });
+    }
+
+    const { db } = await import("./db.js");
+    const fixatumToolboxAcct = db.prepare(`SELECT balance_tinybars FROM accounts WHERE hedera_account_id = ? OR api_key = ?`).get(FIXATUM_WALLET_ID, FIXATUM_WALLET_ID);
+    const fixatumWorkingCapital = fixatumToolboxAcct ? (fixatumToolboxAcct.balance_tinybars / 100_000_000).toFixed(4) : null;
+
+    const [fixatumMirror, trkMirror] = await Promise.all([
+      mirrorBalance(FIXATUM_WALLET_ID),
+      mirrorBalance(TRK_WALLET_ID),
+    ]);
+
+    return json(res, 200, {
+      fixatum_wallet_hbar:     fixatumMirror !== null ? parseFloat(fixatumMirror.toFixed(4)) : null,
+      fixatum_working_capital: fixatumWorkingCapital,
+      trk_wallet_hbar:         trkMirror !== null ? parseFloat(trkMirror.toFixed(4)) : null,
+      fixatum_wallet:          FIXATUM_WALLET_ID,
+      trk_wallet:              TRK_WALLET_ID,
+    });
+  }
+
   if (req.method === "GET" && url.pathname === "/admin/dashboard") {
     const secret = process.env.ADMIN_SECRET;
     const authHeader = req.headers["authorization"] || "";
@@ -594,6 +639,14 @@ function getDashboardHTML(adminSecret) {
   .panel-handle::before { content: "⠿"; color: #333; font-size: 14px; }
   .panel-full { grid-column: 1 / -1; }
   #sidebar-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.6); z-index: 40; }
+  .fleet-agent { background: #0d0d0d; border: 1px solid #1e1e1e; border-radius: 6px; padding: 8px 10px; }
+  .fleet-agent .fa-name { font-size: 10px; font-weight: 600; color: #555; text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 4px; }
+  .fleet-agent .fa-status { display: flex; align-items: center; gap: 5px; }
+  .fleet-agent .fa-label { font-size: 11px; color: #888; }
+  .fa-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
+  .fa-dot.green { background: #4ade80; box-shadow: 0 0 4px #4ade80; }
+  .fa-dot.amber { background: #fbbf24; box-shadow: 0 0 4px #fbbf24; }
+  .fa-dot.grey  { background: #333; }
   @media (max-width: 900px) {
     #menu-btn { display: block; }
     #layout { grid-template-columns: 1fr; }
@@ -632,6 +685,25 @@ function getDashboardHTML(adminSecret) {
   <div class="card"><div class="card-label">Total Deposited</div><div class="card-value" id="kpi-deposited">—</div><div class="card-sub">ℏ received</div></div>
   <div class="card"><div class="card-label">This Month</div><div class="card-value" id="kpi-month-hbar">—</div><div class="card-sub" id="kpi-month-delta"></div></div>
   <div class="card"><div class="card-label">Rate Limit Hits</div><div class="card-value" id="kpi-ratelimit">—</div><div class="card-sub">last 24h</div></div>
+
+  <div style="border-top:1px solid #1a1a1a;padding-top:10px">
+    <div class="sec-head">Critical Balances</div>
+    <div class="card" style="margin-bottom:8px">
+      <div class="card-label">Fixatum Wallet · 0.0.10394452</div>
+      <div class="card-value" id="fixatum-wallet-bal" style="font-size:22px">—</div>
+      <div class="card-sub" id="fixatum-wallet-sub">mirror node</div>
+    </div>
+    <div class="card" style="margin-bottom:8px">
+      <div class="card-label">Fixatum Working Capital</div>
+      <div class="card-value" id="fixatum-wc-bal" style="font-size:22px">—</div>
+      <div class="card-sub" id="fixatum-wc-sub">Toolbox platform · ~3.1 ℏ/reg</div>
+    </div>
+    <div class="card" style="margin-bottom:8px">
+      <div class="card-label">TheRecordKeeper · 0.0.10419731</div>
+      <div class="card-value" id="trk-wallet-bal" style="font-size:22px">—</div>
+      <div class="card-sub" id="trk-wallet-sub">mirror node</div>
+    </div>
+  </div>
 
   ${hasXAgent ? `<div style="border-top:1px solid #1a1a1a;padding-top:10px">
     <div class="sec-head">X Agent</div>
@@ -691,6 +763,18 @@ function getDashboardHTML(adminSecret) {
       <div class="card-label">Active Accounts</div>
       <div id="h-active-accounts" style="font-size:13px;font-weight:600;color:#fff;margin-top:4px">—</div>
       <div style="font-size:10px;color:#444;margin-top:2px">with balance</div>
+    </div>
+  </div>
+
+  <!-- Agent fleet strip -->
+  <div style="background:#111;border:1px solid #1e1e1e;border-radius:8px;padding:12px;margin-bottom:14px">
+    <div class="sec-head" style="margin-bottom:10px">Agent Fleet</div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px" id="fleet-strip">
+      <div class="fleet-agent" id="fa-visionforge">—</div>
+      <div class="fleet-agent" id="fa-trk">—</div>
+      <div class="fleet-agent" id="fa-scout">—</div>
+      <div class="fleet-agent" id="fa-narrator">—</div>
+      <div class="fleet-agent" id="fa-midas">—</div>
     </div>
   </div>
 
@@ -931,6 +1015,69 @@ function updateAnalyticsPanels(analytics) {
   }
 }
 
+async function loadFleetBalances() {
+  try {
+    const fb = await fetchJSON('/admin/fleet-balances');
+
+    // Fixatum wallet (mirror node)
+    const fwEl = document.getElementById('fixatum-wallet-bal');
+    const fwSub = document.getElementById('fixatum-wallet-sub');
+    if (fb.fixatum_wallet_hbar !== null) {
+      fwEl.textContent = fb.fixatum_wallet_hbar + ' \u210f';
+      fwEl.style.color = fb.fixatum_wallet_hbar < 20 ? '#f87171' : fb.fixatum_wallet_hbar < 50 ? '#fbbf24' : '#fff';
+      fwSub.textContent = fb.fixatum_wallet_hbar < 20 ? '\u26a0\ufe0f LOW \u2014 pipeline at risk' : 'mirror node';
+      fwSub.style.color = fb.fixatum_wallet_hbar < 20 ? '#f87171' : '#444';
+    } else { fwEl.textContent = '\u2014'; }
+
+    // Fixatum working capital (Toolbox platform balance)
+    const wcEl = document.getElementById('fixatum-wc-bal');
+    const wcSub = document.getElementById('fixatum-wc-sub');
+    if (fb.fixatum_working_capital !== null) {
+      const wc = parseFloat(fb.fixatum_working_capital);
+      wcEl.textContent = fb.fixatum_working_capital + ' \u210f';
+      wcEl.style.color = wc < 20 ? '#f87171' : wc < 40 ? '#fbbf24' : '#fff';
+      const regsLeft = Math.floor(wc / 3.1);
+      wcSub.textContent = wc < 20 ? '\u26a0\ufe0f LOW \u2014 ~' + regsLeft + ' regs left' : 'Toolbox platform \u00b7 ~' + regsLeft + ' regs left';
+      wcSub.style.color = wc < 20 ? '#f87171' : '#444';
+    } else { wcEl.textContent = '\u2014'; }
+
+    // TRK wallet (mirror node)
+    const trkEl = document.getElementById('trk-wallet-bal');
+    const trkSub = document.getElementById('trk-wallet-sub');
+    if (fb.trk_wallet_hbar !== null) {
+      trkEl.textContent = fb.trk_wallet_hbar + ' \u210f';
+      trkEl.style.color = fb.trk_wallet_hbar < 10 ? '#f87171' : fb.trk_wallet_hbar < 30 ? '#fbbf24' : '#fff';
+      trkSub.textContent = fb.trk_wallet_hbar < 10 ? '\u26a0\ufe0f LOW' : 'mirror node';
+      trkSub.style.color = fb.trk_wallet_hbar < 10 ? '#f87171' : '#444';
+    } else { trkEl.textContent = '\u2014'; }
+  } catch(e) { console.error('Fleet balance error:', e); }
+}
+
+function renderFleetAgent(id, name, lastSeen, note) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  const age = lastSeen ? (Date.now() - new Date(lastSeen).getTime()) / 1000 : null;
+  const dotCls = age === null ? 'grey' : age < 7200 ? 'green' : age < 86400 ? 'amber' : 'grey';
+  const label = age === null ? 'No data' : timeAgo(lastSeen) + (note ? ' \u00b7 ' + note : '');
+  el.innerHTML = `<div class="fa-name">${name}</div><div class="fa-status"><span class="fa-dot ${dotCls}"></span><span class="fa-label">${label}</span></div>`;
+}
+
+async function loadFleetStatus() {
+  try {
+    const r = await fetchJSON('/admin/analytics');
+    // Use last transaction as proxy for VisionForge / general activity signal
+    const txs = await fetchJSON('/admin/transactions');
+    const lastTx = txs.transactions[0]?.timestamp || null;
+    // Agents are populated from agent-report data if Fixatum exposes it;
+    // for now we show known agents with static identity and last-tx signal
+    renderFleetAgent('fa-visionforge', 'VisionForge',  null,  '13:00 UTC daily');
+    renderFleetAgent('fa-trk',         'RecordKeeper', null,  '30m heartbeat');
+    renderFleetAgent('fa-scout',       'ScoutAgent',   null,  'hourly');
+    renderFleetAgent('fa-narrator',    'Narrator',     null,  '4d cycle');
+    renderFleetAgent('fa-midas',       'Midas',        null,  'operator');
+  } catch(e) { console.error('Fleet status error:', e); }
+}
+
 async function loadAll() {
   try {
     const [stats, accounts, txs, analytics] = await Promise.all([
@@ -973,6 +1120,8 @@ async function loadAll() {
       : txs.transactions.slice(0, 15).map(t => \`<tr><td style="color:#444">\${timeAgo(t.timestamp)}</td><td class="mono" style="color:#666">\${t.api_key}</td><td>\${t.tool_name}</td><td style="color:#4ade80">\${(t.amount_tinybars/100000000).toFixed(4)}</td></tr>\`).join('');
 
     document.getElementById('last-updated').textContent = 'Updated ' + new Date().toLocaleTimeString();
+    loadFleetBalances();
+    loadFleetStatus();
   } catch(e) { console.error('Dashboard error:', e); }
 }
 
