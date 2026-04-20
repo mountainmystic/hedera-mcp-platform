@@ -1033,10 +1033,10 @@ async function loadFleetBalances() {
     if (fb.fixatum_working_capital !== null) {
       const wc = parseFloat(fb.fixatum_working_capital);
       wcEl.textContent = fb.fixatum_working_capital + ' \u210f';
-      wcEl.style.color = wc < 20 ? '#f87171' : wc < 40 ? '#fbbf24' : '#fff';
+      wcEl.style.color = wc < 30 ? '#f87171' : wc < 60 ? '#fbbf24' : '#fff';
       const regsLeft = Math.floor(wc / 3.1);
-      wcSub.textContent = wc < 20 ? '\u26a0\ufe0f LOW \u2014 ~' + regsLeft + ' regs left' : 'Toolbox platform \u00b7 ~' + regsLeft + ' regs left';
-      wcSub.style.color = wc < 20 ? '#f87171' : '#444';
+      wcSub.textContent = wc < 30 ? '\u26a0\ufe0f LOW \u2014 ~' + regsLeft + ' regs left' : 'Toolbox platform \u00b7 ~' + regsLeft + ' regs left';
+      wcSub.style.color = wc < 30 ? '#f87171' : '#444';
     } else { wcEl.textContent = '\u2014'; }
 
     // TRK wallet (mirror node)
