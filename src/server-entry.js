@@ -16,6 +16,28 @@ import { handleTelegramUpdate, registerWebhook } from "./telegram.js";
 import { scheduleVisionForge } from "./visionforge.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import http from "http";
+import https from "https";
+
+// Module-level mirror node balance helper
+async function mirrorNodeBalance(accountId) {
+  return new Promise((resolve) => {
+    const req2 = https.request({
+      hostname: "mainnet-public.mirrornode.hedera.com",
+      path: `/api/v1/accounts/${accountId}`,
+      method: "GET",
+      headers: { "Accept": "application/json" },
+    }, resp => {
+      let d = "";
+      resp.on("data", c => d += c);
+      resp.on("end", () => {
+        try { resolve((JSON.parse(d)?.balance?.balance ?? 0) / 100_000_000); }
+        catch { resolve(null); }
+      });
+    });
+    req2.on("error", () => resolve(null));
+    req2.end();
+  });
+}
 
 const required = ["HEDERA_ACCOUNT_ID", "HEDERA_PRIVATE_KEY", "ANTHROPIC_API_KEY"];
 const missing = required.filter((k) => !process.env[k]);
@@ -422,37 +444,13 @@ const httpServer = http.createServer(async (req, res) => {
     if (!isAdmin(req)) return json(res, 401, { error: "Unauthorized" });
     const FIXATUM_WALLET_ID = "0.0.10394452";
     const TRK_WALLET_ID     = "0.0.10419731";
-
-    async function mirrorBalance(accountId) {
-      const https2 = (await import("https")).default;
-      return new Promise((resolve) => {
-        const r2 = https2.request({
-          hostname: "mainnet-public.mirrornode.hedera.com",
-          path: `/api/v1/accounts/${accountId}`,
-          method: "GET",
-          headers: { "Accept": "application/json" },
-        }, resp => {
-          let d = "";
-          resp.on("data", c => d += c);
-          resp.on("end", () => {
-            try { resolve((JSON.parse(d)?.balance?.balance ?? 0) / 100_000_000); }
-            catch { resolve(null); }
-          });
-        });
-        r2.on("error", () => resolve(null));
-        r2.end();
-      });
-    }
-
     const { db } = await import("./db.js");
-    const fixatumToolboxAcct = db.prepare(`SELECT balance_tinybars FROM accounts WHERE hedera_account_id = ? OR api_key = ?`).get(FIXATUM_WALLET_ID, FIXATUM_WALLET_ID);
+    const fixatumToolboxAcct = db.prepare("SELECT balance_tinybars FROM accounts WHERE hedera_account_id = ? OR api_key = ?").get(FIXATUM_WALLET_ID, FIXATUM_WALLET_ID);
     const fixatumWorkingCapital = fixatumToolboxAcct ? (fixatumToolboxAcct.balance_tinybars / 100_000_000).toFixed(4) : null;
-
     const [fixatumMirror, trkMirror] = await Promise.all([
-      mirrorBalance(FIXATUM_WALLET_ID),
-      mirrorBalance(TRK_WALLET_ID),
+      mirrorNodeBalance(FIXATUM_WALLET_ID),
+      mirrorNodeBalance(TRK_WALLET_ID),
     ]);
-
     return json(res, 200, {
       fixatum_wallet_hbar:     fixatumMirror !== null ? parseFloat(fixatumMirror.toFixed(4)) : null,
       fixatum_working_capital: fixatumWorkingCapital,
