@@ -1,5 +1,7 @@
 # HederaToolbox
 
+[![SafeSkill 68/100](https://img.shields.io/badge/SafeSkill-68%2F100_Use%20with%20Caution-orange)](https://safeskill.dev/scan/mountainmystic-hederatoolbox)
+
 > The intelligence layer for AI agents on Hedera.
 
 **23 tools. 7 modules. Pay per call in HBAR. No registration.**
