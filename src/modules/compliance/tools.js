@@ -9,6 +9,7 @@ import {
 import axios from "axios";
 import crypto from "crypto";
 import { chargeForTool } from "../../payments.js";
+import { attestationEnvelope, verifyAgentSignature } from "../../did.js";
 
 let hederaClient;
 
@@ -35,7 +36,7 @@ const PLATFORM_TOPIC = process.env.HCS_COMPLIANCE_TOPIC_ID || "0.0.10305125";
 export const COMPLIANCE_TOOL_DEFINITIONS = [
   {
     name: "hcs_write_record",
-    description: "Write a tamper-evident record to any open HCS topic on Hedera. Use this to write entries to your agent's own topic for continuity, memory, or history. topic_id is required — pass your agent topic ID. Returns record ID and tx proof. 0.1 HBAR.",
+    description: "Write a tamper-evident record to any open HCS topic on Hedera. Use this to write entries to your agent's own topic for continuity, memory, or history. topic_id is required — pass your agent topic ID. Optionally sign the record with your Fixatum DID key by passing agent_did and agent_signature together, which marks the record agent_signed instead of platform_witnessed. Returns record ID and tx proof. 0.1 HBAR.",
     annotations: { title: "Write Compliance Record", readOnlyHint: false, destructiveHint: true },
     inputSchema: {
       type: "object",
@@ -44,6 +45,8 @@ export const COMPLIANCE_TOOL_DEFINITIONS = [
         record_type: { type: "string", description: "Type of compliance record (e.g. transaction, approval, audit_event)" },
         entity_id: { type: "string", description: "ID of the entity this record relates to" },
         data: { type: "object", description: "The compliance data to record (any JSON object)" },
+        agent_did: { type: "string", description: "Optional. Your Fixatum DID (did:hedera:mainnet:z{BASE58_PUBKEY}_{ACCOUNT_ID}). Must be passed together with agent_signature." },
+        agent_signature: { type: "string", description: "Optional. Base64 Ed25519 signature over the canonical JSON of {topic_id, record_type, entity_id, data} with object keys sorted at every depth. Must be passed together with agent_did. A signature that does not match is rejected and the call is not charged." },
         api_key: { type: "string", description: "Your HederaIntel API key" },
       },
       required: ["topic_id", "record_type", "entity_id", "data", "api_key"],
@@ -51,7 +54,7 @@ export const COMPLIANCE_TOOL_DEFINITIONS = [
   },
   {
     name: "hcs_verify_record",
-    description: "Verify a compliance record on Hedera HCS has not been tampered. 1.0 HBAR.",
+    description: "Check that a compliance record on Hedera HCS still matches its stored hash. For records written as agent_signed, the embedded Ed25519 signature is independently re-checked against the public key carried in the record's DID. Returns tamper_check, attestation_type, agent_did and signature_valid. 1.0 HBAR.",
     annotations: { title: "Verify Compliance Record", readOnlyHint: true, destructiveHint: false },
     inputSchema: {
       type: "object",
@@ -96,8 +99,7 @@ export const COMPLIANCE_TOOL_DEFINITIONS = [
 
 export async function executeComplianceTool(name, args) {
   if (name === "hcs_write_record") {
-    const payment = chargeForTool("hcs_write_record", args.api_key);
-    const client = getClient();
+    // Every check below runs before chargeForTool — a rejected write is never billed.
     if (!args.topic_id) {
       return {
         error: true,
@@ -108,6 +110,55 @@ export async function executeComplianceTool(name, args) {
 
     const topicId = args.topic_id;
 
+    // Agent signing is opt-in and all-or-nothing: both fields, or neither.
+    const hasDid = !!args.agent_did;
+    const hasSignature = !!args.agent_signature;
+    if (hasDid !== hasSignature) {
+      return {
+        error: true,
+        reason: "agent_did and agent_signature must be supplied together. Pass both to write an agent_signed record, or neither for a platform_witnessed record.",
+        timestamp: new Date().toISOString(),
+      };
+    }
+
+    let attestationType = "platform_witnessed";
+    if (hasDid) {
+      const envelope = attestationEnvelope({
+        topic_id: topicId,
+        record_type: args.record_type,
+        entity_id: args.entity_id,
+        data: args.data,
+      });
+
+      let signatureMatches = false;
+      try {
+        signatureMatches = verifyAgentSignature(args.agent_did, envelope, args.agent_signature);
+      } catch (e) {
+        return {
+          error: true,
+          reason: `Signature check could not run: ${e.message}`,
+          signature_valid: false,
+          not_charged: true,
+          timestamp: new Date().toISOString(),
+        };
+      }
+
+      if (!signatureMatches) {
+        return {
+          error: true,
+          reason: "agent_signature does not match agent_did over the signed envelope. Sign the canonical JSON of {topic_id, record_type, entity_id, data} with object keys sorted at every depth.",
+          signature_valid: false,
+          not_charged: true,
+          timestamp: new Date().toISOString(),
+        };
+      }
+
+      attestationType = "agent_signed";
+    }
+
+    const payment = chargeForTool("hcs_write_record", args.api_key);
+    const client = getClient();
+
     const record = {
       record_id: crypto.randomUUID(),
       record_type: args.record_type,
@@ -115,7 +166,15 @@ export async function executeComplianceTool(name, args) {
       data: args.data,
       written_at: new Date().toISOString(),
       written_by: process.env.HEDERA_ACCOUNT_ID,
+      attestation_type: attestationType,
     };
+
+    if (hasDid) {
+      record.agent_did = args.agent_did;
+      record.agent_signature = args.agent_signature;
+      record.submitted_by = process.env.HEDERA_ACCOUNT_ID;
+      record.ts = record.written_at;
+    }
 
     const hash = crypto
       .createHash("sha256")
@@ -137,6 +196,9 @@ export async function executeComplianceTool(name, args) {
       topic_id: topicId,
       entity_id: args.entity_id,
       record_type: args.record_type,
+      attestation_type: attestationType,
+      agent_did: hasDid ? args.agent_did : null,
+      signature_valid: hasDid ? true : null,
       hash,
       transaction_id: tx.transactionId.toString(),
       written_at: record.written_at,
@@ -164,10 +226,32 @@ export async function executeComplianceTool(name, args) {
         const record = JSON.parse(content);
         if (record.record_id === args.record_id) {
           const { hash, ...recordWithoutHash } = record;
+          // Hashing stays on plain JSON.stringify — every record already on
+          // chain was hashed this way, so the canonical form must not be used here.
           const computedHash = crypto
             .createHash("sha256")
             .update(JSON.stringify(recordWithoutHash))
             .digest("hex");
+
+          // Records written before attestation_type existed are platform_witnessed.
+          const attestationType = record.attestation_type || "platform_witnessed";
+
+          // Re-derive the public key from the DID stored in the record and check
+          // the signature again here, independently of the write path.
+          let signatureValid = null;
+          if (attestationType === "agent_signed") {
+            const envelope = attestationEnvelope({
+              topic_id: topicId,
+              record_type: record.record_type,
+              entity_id: record.entity_id,
+              data: record.data,
+            });
+            try {
+              signatureValid = verifyAgentSignature(record.agent_did, envelope, record.agent_signature);
+            } catch (e) {
+              signatureValid = false;
+            }
+          }
 
           foundRecord = {
             record_id: record.record_id,
@@ -175,8 +259,12 @@ export async function executeComplianceTool(name, args) {
             entity_id: record.entity_id,
             written_at: record.written_at,
             consensus_timestamp: msg.consensus_timestamp,
+            tamper_check: computedHash === hash ? "intact" : "mismatch",
             hash_valid: computedHash === hash,
             tampered: computedHash !== hash,
+            attestation_type: attestationType,
+            agent_did: record.agent_did || null,
+            signature_valid: signatureValid,
             sequence_number: msg.sequence_number,
           };
           break;
@@ -188,18 +276,16 @@ export async function executeComplianceTool(name, args) {
 
     if (!foundRecord) {
       return {
-        verified: false,
+        found: false,
         record_id: args.record_id,
         topic_id: topicId,
-        error: "Record not found on blockchain",
+        error: "Record not found on this topic",
         payment,
       };
     }
 
     return {
-      verified: true,
-      tampered: foundRecord.tampered,
-      hash_valid: foundRecord.hash_valid,
+      found: true,
       topic_id: topicId,
       ...foundRecord,
       payment,

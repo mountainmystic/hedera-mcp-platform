@@ -177,17 +177,20 @@ async function main() {
   });
 
   // Step 6 — Optional verify
-  let verified = null;
+  let recordCheck = null;
   if (VERIFY) {
     const verifyStep = writeStep + 1;
-    log(`Step ${verifyStep} — Verifying record on-chain (1.0 HBAR)...`);
+    log(`Step ${verifyStep} — Re-checking record on-chain (1.0 HBAR)...`);
     await new Promise(r => setTimeout(r, 3000)); // wait for consensus
-    verified = await callTool("hcs_verify_record", { record_id: record.record_id });
+    recordCheck = await callTool("hcs_verify_record", {
+      topic_id: TOPIC_ID,
+      record_id: record.record_id,
+    });
   }
 
   // ── Final report ──────────────────────────────────────────────────────────
   const icon = result === "APPROVED" ? "[APPROVED]" : result === "REJECTED" ? "[REJECTED]" : "[REVIEW]";
-  const remaining = verified?.payment?.remaining_hbar ?? record.payment?.remaining_hbar;
+  const remaining = recordCheck?.payment?.remaining_hbar ?? record.payment?.remaining_hbar;
   const kyaDisplay = kya.score !== null ? `${kya.score}/100 (${kya.grade})` : `Not registered`;
 
   console.log("\n" + "=".repeat(62));
@@ -208,7 +211,13 @@ async function main() {
   console.log(`  Record ID:     ${record.record_id}`);
   console.log(`  HCS topic:     ${TOPIC_ID}`);
   console.log(`  HashScan:      ${HASHSCAN_TX}/${record.transaction_id}`);
-  if (verified) console.log(`  Verified:      ${verified.verified ? "Intact" : "TAMPER DETECTED"}`);
+  if (recordCheck) {
+    console.log(`  Tamper check:  ${recordCheck.tamper_check === "intact" ? "Intact" : "MISMATCH DETECTED"}`);
+    console.log(`  Attestation:   ${recordCheck.attestation_type}`);
+    if (recordCheck.signature_valid !== null) {
+      console.log(`  Signature:     ${recordCheck.signature_valid ? "matches agent DID key" : "DOES NOT MATCH"}`);
+    }
+  }
   if (remaining) console.log(`  Balance after: ${remaining} HBAR`);
   sep();
 
