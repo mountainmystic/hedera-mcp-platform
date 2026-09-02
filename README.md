@@ -288,8 +288,8 @@ Terms of Service: `get_terms` tool or [/public/terms.json](https://api.hederatoo
 
 | Tool | Cost | Description |
 |------|------|-------------|
-| `hcs_write_record` | 0.10 HBAR | Write tamper-evident record to HCS |
-| `hcs_verify_record` | 1.00 HBAR | Verify a record has not been altered |
+| `hcs_write_record` | 0.10 HBAR | Write tamper-evident record to HCS — optionally signed with your DID key |
+| `hcs_verify_record` | 1.00 HBAR | Check a record's hash, and re-check its agent signature if it has one |
 | `hcs_audit_trail` | 2.00 HBAR | Full chronological audit history for an entity |
 
 ---
@@ -350,6 +350,10 @@ Call `fixatum_register` without `ed25519_public_key` to get key generation instr
 ---
 
 ## Changelog
+
+**v4.0.0** — Agent-signed HCS records. Pass `agent_did` and `agent_signature` to `hcs_write_record` to write a record signed with your Fixatum DID key — records are now marked `agent_signed` or `platform_witnessed`, and `hcs_verify_record` re-checks the signature independently. A signature that does not match is rejected and the call is not charged.
+
+> **Breaking:** `hcs_verify_record` no longer returns the top-level `verified` field. Read `tamper_check` instead — it returns `"intact"` or `"mismatch"`. The `hash_valid` and `tampered` fields are unchanged, so callers reading those need no change.
 
 **v3.5.3** — Fixatum DID module added (fixatum_register, fixatum_score, fixatum_status) — 23 tools, 7 modules
 
