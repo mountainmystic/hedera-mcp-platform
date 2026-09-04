@@ -102,7 +102,7 @@ async function getAccountInfo(args) {
 
     links: {
       website: "https://hederatoolbox.com",
-      mcp_endpoint: "https://hedera-mcp-platform-production.up.railway.app/mcp",
+      mcp_endpoint: "https://api.hederatoolbox.com/mcp",
       npm: "https://www.npmjs.com/package/@hederatoolbox/platform",
       llms_txt: "https://hederatoolbox.com/llms.txt",
     },
